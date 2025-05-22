@@ -49,35 +49,71 @@ except Exception as e:
     exit()
 
 AGENT_URL = os.getenv('AGENT_URL', 'http://localhost:5000')
+COMMANDS_SCHEMA_ENDPOINT = f"{AGENT_URL}/commands_schema"
 
-def get_available_commands_description():
-    commands = [
-        {
-            "name": "tell_time",
-            "description": "Gets the current server time.",
-            "params_schema_for_prompt": {} # For prompt reference
-        },
-        {
-            "name": "greet",
-            "description": "Greets a user. If no name is provided, defaults to 'Guest'.",
-            "params_schema_for_prompt": { # For prompt reference
-                "name": {"type": "string", "optional": True, "description": "The name of the person to greet."}
-            }
-        }
-    ]
-    description_string = "Available commands (for your reference to select `command_name` and populate `params_as_string`):\n"
-    for cmd in commands:
-        description_string += f"Command Name for `command_name` field: `{cmd['name']}`\n"
-        description_string += f"  Description: {cmd['description']}\n"
-        if cmd['params_schema_for_prompt']:
-            description_string += "  Parameters (to be formatted as a JSON string for the `params_as_string` field):\n"
-            for p_name, p_info in cmd['params_schema_for_prompt'].items():
-                opt_text = "(optional)" if p_info.get('optional') else "(required)"
-                description_string += f"    - `{p_name}`: type `{p_info['type']}` {opt_text}. {p_info.get('description', '')}\n"
+# --- Global variable to store the fetched command schema ---
+AGENT_COMMANDS_SCHEMA_STRING = "No commands loaded yet. Please ensure agent is running and schema can be fetched."
+
+def fetch_and_format_agent_commands_schema():
+    """
+    Fetches the command schema from the agent and formats it for the LLM prompt.
+    Updates the global AGENT_COMMANDS_SCHEMA_STRING.
+    """
+    global AGENT_COMMANDS_SCHEMA_STRING
+    print(f"Attempting to fetch command schema from: {COMMANDS_SCHEMA_ENDPOINT}")
+    try:
+        response = requests.get(COMMANDS_SCHEMA_ENDPOINT, timeout=5)
+        response.raise_for_status()
+        schema_data = response.json()
+
+        if schema_data.get("status") == "success" and "commands" in schema_data:
+            commands = schema_data["commands"]
+            if not commands:
+                AGENT_COMMANDS_SCHEMA_STRING = "Agent reported success but returned no commands."
+                print(AGENT_COMMANDS_SCHEMA_STRING)
+                return
+
+            description_string = "Available commands (for your reference to select `command_name` and populate `params_as_string`):\n"
+            for cmd in commands:
+                description_string += f"Command Name for `command_name` field: `{cmd['name']}`\n"
+                description_string += f"  Description: {cmd.get('description', 'No description.')}\n"
+                
+                params_info = cmd.get('params_schema_for_prompt', {})
+                if params_info:
+                    description_string += "  Parameters (to be formatted as a JSON string for the `params_as_string` field):\n"
+                    for p_name, p_detail in params_info.items():
+                        p_type = p_detail.get('type', 'any')
+                        opt_text = "(optional)" if p_detail.get('optional') else "(required)"
+                        p_desc = p_detail.get('description', '')
+                        default_val = f" (defaults to: {p_detail['default']})" if 'default' in p_detail else ""
+                        description_string += f"    - `{p_name}`: type `{p_type}` {opt_text}{default_val}. {p_desc}\n"
+                else:
+                    description_string += "  Parameters for `params_as_string` field: None (use an empty JSON object string: '{}')\n"
+                description_string += "\n"
+            AGENT_COMMANDS_SCHEMA_STRING = description_string
+            print("Successfully fetched and formatted agent command schema.")
+            print(f"Formatted Schema:\n{AGENT_COMMANDS_SCHEMA_STRING}") # For debugging
         else:
-            description_string += "  Parameters for `params_as_string` field: None (use an empty JSON object string: '{}')\n"
-        description_string += "\n"
-    return description_string
+            error_msg = schema_data.get("message", "Unknown error structure from agent schema endpoint.")
+            AGENT_COMMANDS_SCHEMA_STRING = f"Failed to parse valid schema from agent: {error_msg}"
+            print(AGENT_COMMANDS_SCHEMA_STRING)
+
+    except requests.exceptions.RequestException as e:
+        AGENT_COMMANDS_SCHEMA_STRING = f"Could not connect to agent to fetch command schema: {e}. Ensure agent is running."
+        print(AGENT_COMMANDS_SCHEMA_STRING)
+    except json.JSONDecodeError:
+        AGENT_COMMANDS_SCHEMA_STRING = "Agent's schema endpoint did not return valid JSON."
+        print(AGENT_COMMANDS_SCHEMA_STRING)
+
+
+# --- Function to get available commands description (NOW USES THE GLOBAL VARIABLE) ---
+def get_available_commands_description():
+    """
+    Returns the globally stored, dynamically fetched command schema string.
+    """
+    return AGENT_COMMANDS_SCHEMA_STRING # This is now populated by fetch_and_format_agent_commands_schema()
+
+
 
 def translate_to_command_json(natural_language_input: str):
     commands_desc_str = get_available_commands_description()
@@ -151,13 +187,15 @@ def translate_to_command_json(natural_language_input: str):
         return {"error": error_message}
 
 
+COMMANDS_EXECUTION_ENDPOINT = f"{AGENT_URL}/execute"
+
 def send_command_to_agent(command_json):
     print(f"\n--- Sending to Agent ---")
     print(f"URL: {AGENT_URL}")
     print(f"Payload: {json.dumps(command_json, indent=2)}")
     print("------------------------\n")
     try:
-        response = requests.post(AGENT_URL, json=command_json, timeout=10)
+        response = requests.post(COMMANDS_EXECUTION_ENDPOINT, json=command_json, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.ConnectionError:
@@ -173,6 +211,10 @@ def send_command_to_agent(command_json):
 
 if __name__ == '__main__':
     print("Local Task Controller (with Gemini JSON Mode - params_as_string) started.")
+
+    # Fetch the schema from the agent when the controller starts
+    fetch_and_format_agent_commands_schema()
+
     print(f"Ensure agent_server.py is running and accessible at {AGENT_URL}")
     print("Type 'exit' or 'quit' to stop.")
 

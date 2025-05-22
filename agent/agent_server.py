@@ -1,5 +1,6 @@
 # Importing flask module in the project is mandatory
 # An object of Flask class is our WSGI application.
+import inspect
 from flask import Flask, jsonify, request
 import sys, os, pkgutil, importlib
 import modules as modules_package
@@ -63,6 +64,52 @@ def hello_world():
     return 'Hello World'
 
 
+@app.route('/commands_schema', methods=['GET'])
+def get_commands_schema():
+    """
+    Returns a JSON schema describing all available commands, their parameters,
+    and descriptions (from docstrings).
+    """
+    schema_list = []
+    for command_name, command_function in COMMAND_REGISTRY.items():
+        func_doc = inspect.getdoc(command_function) # Get the clean docstring
+        description = func_doc.split('\n\n')[0] if func_doc else "No description available." # First paragraph of docstring
+        
+        sig = inspect.signature(command_function)
+        params_schema = {}
+        has_required_params = False
+
+        for param_name, param_obj in sig.parameters.items():
+            param_info = {
+                "type": "string", # Default, can be refined if type hints are consistently used
+                "optional": param_obj.default is not inspect.Parameter.empty,
+                "description": "" # Could try to parse from docstring later if more advanced
+            }
+            if param_obj.annotation is not inspect.Parameter.empty:
+                # Try to get a string representation of the type hint
+                if hasattr(param_obj.annotation, '__name__'):
+                    param_info["type"] = param_obj.annotation.__name__
+                else: # For complex types like typing.List[str]
+                    param_info["type"] = str(param_obj.annotation)
+
+            if param_obj.default is not inspect.Parameter.empty:
+                param_info["default"] = param_obj.default
+            else:
+                has_required_params = True
+            
+            params_schema[param_name] = param_info
+            
+        schema_list.append({
+            "name": command_name,
+            "description": description,
+            "params_schema_for_prompt": params_schema, # Matches key used in controller's prompt
+            # "has_required_params": has_required_params # Optional: useful info for LLM
+        })
+        
+    return jsonify({"status": "success", "commands": schema_list})
+
+
+
 """
 {
   "command_name": "some_command_identifier",
@@ -72,6 +119,7 @@ def hello_world():
   }
 }
 """
+
 @app.route('/execute', methods=['POST'])
 def execute():
     if request.is_json:
