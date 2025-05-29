@@ -4,7 +4,6 @@
 
 Ever wanted to just *tell* your computer what to do? BuddyAI aims to make that a reality. Whether it's creating files, searching the web, getting system information, or managing your reminders, just type your request, and let BuddyAI (powered by an LLM) handle the rest.
 
-**[TODO: Add a cool screenshot or GIF of BuddyAI in action here if you have one!]**
 
 ## Features
 
@@ -62,8 +61,8 @@ This architecture allows for a clear separation of concerns and makes the agent 
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>.git
-    cd <YOUR_REPO_NAME>
+    git clone https://github.com/MockingJay1710/buddyai.git
+    cd buddyai
     ```
 
 2.  **Create and Activate a Python Virtual Environment:**
@@ -200,7 +199,7 @@ You can now try invoking your new command using natural language!
 
 Contributions are welcome and greatly appreciated! Whether it's reporting a bug, suggesting a feature, improving documentation, or writing code, please feel free to get involved.
 
-1.  **Reporting Bugs / Suggesting Features:** Please open an issue on the [GitHub Issues page](https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>/issues).
+1.  **Reporting Bugs / Suggesting Features:** Please open an issue on the [GitHub Issues page](https://github.com/MockingJay1710/buddyai.git/issues).
 2.  **Contributing Code:**
     *   Fork the repository.
     *   Create a new branch for your feature or bug fix (`git checkout -b feature/your-feature-name` or `git checkout -b fix/your-bug-fix`).
@@ -227,7 +226,7 @@ Please refer to `CONTRIBUTING.md` for more detailed guidelines. (TODO: Create a 
 
 ## License
 
-This project is licensed under the **[TODO: CHOOSE A LICENSE - e.g., MIT License or Apache 2.0 License]**. See the `LICENSE.md` file for details.
+This project is licensed under the **MIT License**. See the `LICENSE.md` file for details.
 
 ---
 
