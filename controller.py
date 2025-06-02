@@ -121,6 +121,37 @@ def convert_agent_schema_to_function_declarations(agent_commands_list: list) -> 
     return function_declarations
 
 
+conversation_history = [  # Optional: A system prompt can sometimes help guide the LLM's behavior
+    """ types.Content(
+                role="system",
+                parts=[
+                    types.Part(
+                        text="You are a helpful assistant that executes tasks by calling available functions based on the user's request. Only use the functions provided. If no function is suitable, explain why you cannot perform the request."
+                    )
+                ],
+            ), """,
+]  # Global variable to hold conversation_history for Gemini API calls
+MAX_HISTORY_TURNS = (
+    5  # Example: Keep last 5 user/model/tool exchanges (adjust as needed)
+)
+
+
+def manage_history_length():
+    """Simple strategy to limit history length."""
+    global conversation_history
+    # A "turn" could be a user message + model response (which might include tool call + tool response)
+    # This is a very rough way; token counting is better.
+    # Let's say we want to keep roughly MAX_HISTORY_TURNS * 2 or * 3 items if we include tool results
+    # For simplicity, let's just cap the number of Content objects.
+    max_items = MAX_HISTORY_TURNS * 3
+    if len(conversation_history) > max_items:
+        # Keep the system prompt (if you add one as the first element) and the most recent items
+        # If no persistent system prompt:
+        conversation_history = conversation_history[-max_items:]
+        # If you have a system prompt as conversation_history[0]:
+        # conversation_history = [conversation_history[0]] + conversation_history[-(max_items-1):]
+
+
 # --- Translate user input to agent command JSON using Gemini ---
 def translate_to_command_json(user_input: str, declarations: list) -> dict:
     try:
@@ -134,23 +165,17 @@ def translate_to_command_json(user_input: str, declarations: list) -> dict:
             max_output_tokens=1024,
             tools=[tools],
         )
-
-        contents = [
+        global conversation_history
+        conversation_history.append(
             types.Content(role="user", parts=[types.Part(text=user_input)]),
-            # Optional: A system prompt can sometimes help guide the LLM's behavior
-            """ types.Content(
-                role="system",
-                parts=[
-                    types.Part(
-                        text="You are a helpful assistant that executes tasks by calling available functions based on the user's request. Only use the functions provided. If no function is suitable, explain why you cannot perform the request."
-                    )
-                ],
-            ), """,
-        ]
+        )  # Append user input to conversation_history
+        manage_history_length()  # Ensure we don't exceed the max history length
 
         print("\nAsking Gemini to translate your input into a command...")
         response = client.models.generate_content(
-            model="gemini-2.0-flash", config=config, contents=contents
+            model="gemini-2.0-flash",
+            config=config,
+            contents=conversation_history,
         )
 
         # Correctly parse the function call from Gemini's response
@@ -205,6 +230,11 @@ def translate_to_command_json(user_input: str, declarations: list) -> dict:
                         print(
                             f"Gemini suggested function call: '{command_name}' with params: {params}"
                         )
+
+                        # Add the function call ITSELF to history (Gemini expects this)
+                        # The 'model' role made the function call
+                        conversation_history.append(response.candidates[0].content)
+
                         return {
                             "command_name": command_name,
                             "params": params,  # `params` is now a Python dictionary
@@ -218,6 +248,9 @@ def translate_to_command_json(user_input: str, declarations: list) -> dict:
         )
         print(
             f"Gemini did not suggest a function call. Text response: '{llm_text_response}'"
+        )
+        conversation_history.append(
+            types.Content(role="model", parts=[types.Part(text=llm_text_response)])
         )
         return {
             "error": "Gemini did not choose a function to call.",
